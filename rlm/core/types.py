@@ -35,13 +35,25 @@ class ModelUsageSummary:
     total_calls: int
     total_input_tokens: int
     total_output_tokens: int
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
 
     def to_dict(self):
         return {
             "total_calls": self.total_calls,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
         }
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Calculate cache hit rate as percentage of input tokens served from cache."""
+        total = self.total_input_tokens + self.cache_creation_tokens + self.cache_read_tokens
+        if total == 0:
+            return 0.0
+        return (self.cache_read_tokens / total) * 100
 
     @classmethod
     def from_dict(cls, data: dict) -> "ModelUsageSummary":
@@ -49,6 +61,8 @@ class ModelUsageSummary:
             total_calls=data.get("total_calls"),
             total_input_tokens=data.get("total_input_tokens"),
             total_output_tokens=data.get("total_output_tokens"),
+            cache_creation_tokens=data.get("cache_creation_tokens", 0),
+            cache_read_tokens=data.get("cache_read_tokens", 0),
         )
 
 

@@ -166,18 +166,31 @@ class LocalREPL(NonIsolatedEnv):
             return str(self.locals[variable_name])
         return f"Error: Variable '{variable_name}' not found"
 
-    def _llm_query(self, prompt: str, model: str | None = None) -> str:
+    def _llm_query(
+        self, prompt: str, model: str | None = None, system_prompt: str | None = None
+    ) -> str:
         """Query the LM via socket connection to the handler.
 
         Args:
             prompt: The prompt to send to the LM.
             model: Optional model name to use (if handler has multiple clients).
+            system_prompt: Optional system prompt. When provided, enables prefix caching -
+                          the system prompt is cached and reused across calls.
         """
         if not self.lm_handler_address:
             return "Error: No LM handler configured"
 
         try:
-            request = LMRequest(prompt=prompt, model=model)
+            # Structure prompt with system message for caching if provided
+            if system_prompt:
+                structured_prompt = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+            else:
+                structured_prompt = prompt
+
+            request = LMRequest(prompt=structured_prompt, model=model)
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
@@ -192,12 +205,17 @@ class LocalREPL(NonIsolatedEnv):
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
-    def _llm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+    def _llm_query_batched(
+        self, prompts: list[str], model: str | None = None, system_prompt: str | None = None
+    ) -> list[str]:
         """Query the LM with multiple prompts concurrently.
 
         Args:
             prompts: List of prompts to send to the LM.
             model: Optional model name to use (if handler has multiple clients).
+            system_prompt: Optional shared system prompt for all queries. When provided,
+                          enables prefix caching - the system prompt is cached and reused
+                          across all prompts in the batch, reducing token costs.
 
         Returns:
             List of responses in the same order as input prompts.
@@ -206,7 +224,21 @@ class LocalREPL(NonIsolatedEnv):
             return ["Error: No LM handler configured"] * len(prompts)
 
         try:
-            responses = send_lm_request_batched(self.lm_handler_address, prompts, model=model)
+            # Structure prompts with shared system message for caching
+            if system_prompt:
+                structured_prompts = [
+                    [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": p},
+                    ]
+                    for p in prompts
+                ]
+            else:
+                structured_prompts = prompts
+
+            responses = send_lm_request_batched(
+                self.lm_handler_address, structured_prompts, model=model
+            )
 
             results = []
             for response in responses:
